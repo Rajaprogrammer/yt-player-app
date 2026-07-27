@@ -1,0 +1,801 @@
+name: Setup Stothras App, Build & Release APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create project folders
+        run: |
+          mkdir -p assets
+          mkdir -p src/theme
+          mkdir -p src/utils
+          mkdir -p src/context
+          mkdir -p src/screens
+
+      # ---------------------------------------------------------------
+      # ROOT CONFIG FILES
+      # ---------------------------------------------------------------
+      - name: Create package.json
+        run: |
+          cat > package.json << 'EOF'
+          {
+            "name": "stothras",
+            "version": "1.0.0",
+            "main": "node_modules/expo/AppEntry.js",
+            "private": true,
+            "scripts": {
+              "start": "expo start",
+              "android": "expo run:android",
+              "prebuild": "expo prebuild"
+            },
+            "dependencies": {
+              "expo": "~51.0.0",
+              "expo-linear-gradient": "~13.0.2",
+              "expo-status-bar": "~1.12.1",
+              "react": "18.2.0",
+              "react-native": "0.74.5",
+              "@react-navigation/native": "^6.1.17",
+              "@react-navigation/native-stack": "^6.9.26",
+              "react-native-screens": "~3.31.1",
+              "react-native-safe-area-context": "4.10.5",
+              "@react-native-async-storage/async-storage": "1.23.1",
+              "@expo/vector-icons": "^14.0.0"
+            },
+            "devDependencies": {
+              "@babel/core": "^7.20.0",
+              "babel-preset-expo": "~11.0.0"
+            }
+          }
+          EOF
+
+      - name: Create app.json
+        run: |
+          cat > app.json << 'EOF'
+          {
+            "expo": {
+              "name": "Stothras",
+              "slug": "stothras",
+              "version": "1.0.0",
+              "orientation": "portrait",
+              "icon": "./assets/logo.png",
+              "userInterfaceStyle": "light",
+              "splash": {
+                "image": "./assets/logo.png",
+                "resizeMode": "contain",
+                "backgroundColor": "#FFF3E0"
+              },
+              "android": {
+                "package": "com.stothras.app",
+                "adaptiveIcon": {
+                  "foregroundImage": "./assets/logo.png",
+                  "backgroundColor": "#FFF3E0"
+                }
+              },
+              "ios": {
+                "bundleIdentifier": "com.stothras.app"
+              }
+            }
+          }
+          EOF
+
+      - name: Create babel.config.js
+        run: |
+          cat > babel.config.js << 'EOF'
+          module.exports = function (api) {
+            api.cache(true);
+            return {
+              presets: ['babel-preset-expo'],
+            };
+          };
+          EOF
+
+      - name: Create .gitignore
+        run: |
+          cat > .gitignore << 'EOF'
+          node_modules/
+          android/
+          ios/
+          .expo/
+          *.log
+          EOF
+
+      - name: Create App.js
+        run: |
+          cat > App.js << 'EOF'
+          import React from 'react';
+          import { NavigationContainer } from '@react-navigation/native';
+          import { createNativeStackNavigator } from '@react-navigation/native-stack';
+          import { StatusBar } from 'expo-status-bar';
+          import { StothrasProvider } from './src/context/StothrasContext';
+          import SplashScreen from './src/screens/SplashScreen';
+          import HomeScreen from './src/screens/HomeScreen';
+          import ManageScreen from './src/screens/ManageScreen';
+          import EditScreen from './src/screens/EditScreen';
+
+          const Stack = createNativeStackNavigator();
+
+          export default function App() {
+            return (
+              <StothrasProvider>
+                <StatusBar style="dark" />
+                <NavigationContainer>
+                  <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Splash">
+                    <Stack.Screen name="Splash" component={SplashScreen} />
+                    <Stack.Screen name="Home" component={HomeScreen} />
+                    <Stack.Screen name="Manage" component={ManageScreen} />
+                    <Stack.Screen name="Edit" component={EditScreen} />
+                  </Stack.Navigator>
+                </NavigationContainer>
+              </StothrasProvider>
+            );
+          }
+          EOF
+
+      # ---------------------------------------------------------------
+      # THEME / UTILS / CONTEXT
+      # ---------------------------------------------------------------
+      - name: Create src/theme/colors.js
+        run: |
+          cat > src/theme/colors.js << 'EOF'
+          export default {
+            background: ['#FFF8E1', '#FFE0B2'],
+            splashBackground: ['#4A0404', '#8B0000', '#FF9933'],
+            headerText: '#8B0000',
+            cardBackground: '#FFFFFF',
+            cardBorder: '#FF9933',
+            cardText: '#5D4037',
+            accent: '#FF9933',
+            danger: '#C62828',
+          };
+          EOF
+
+      - name: Create src/utils/youtube.js
+        run: |
+          cat > src/utils/youtube.js << 'EOF'
+          import { Linking, Platform, Alert } from 'react-native';
+
+          export function extractVideoId(input) {
+            if (!input) return null;
+            const trimmed = input.trim();
+
+            if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+
+            const patterns = [
+              /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
+              /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
+              /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+              /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+            ];
+
+            for (const p of patterns) {
+              const match = trimmed.match(p);
+              if (match) return match[1];
+            }
+            return null;
+          }
+
+          export async function openYouTube(videoId) {
+            if (!videoId) {
+              Alert.alert('Oops', 'This video link seems invalid.');
+              return;
+            }
+
+            const appUrl = Platform.select({
+              ios: `youtube://${videoId}`,
+              android: `vnd.youtube://${videoId}`,
+              default: `https://www.youtube.com/watch?v=${videoId}`,
+            });
+            const webUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+            try {
+              const supported = await Linking.canOpenURL(appUrl);
+              if (supported) {
+                await Linking.openURL(appUrl);
+                return;
+              }
+            } catch (e) {
+              // fall through to web
+            }
+
+            try {
+              await Linking.openURL(webUrl);
+            } catch (e) {
+              Alert.alert('Error', 'Could not open YouTube.');
+            }
+          }
+          EOF
+
+      - name: Create src/utils/storage.js
+        run: |
+          cat > src/utils/storage.js << 'EOF'
+          import AsyncStorage from '@react-native-async-storage/async-storage';
+
+          const STORAGE_KEY = '@stothras_items_v1';
+
+          export const DEFAULT_ITEMS = [
+            { id: '1', title: 'Lalitha Sahasranamam', videoId: 'WjHZ0mLUMWk' },
+            { id: '2', title: 'Aditya Hrudayam', videoId: 'wsaKgavtI0w' },
+            { id: '3', title: 'Hanuman Chalisa', videoId: '6XcSQL9lbjo' },
+            { id: '4', title: 'Kanakadhara Stothram', videoId: 'Pn2oDZh96lo' },
+            { id: '5', title: 'Surya Ashtakam', videoId: '6Tes5NtN8pw' },
+          ];
+
+          export async function getItems() {
+            try {
+              const raw = await AsyncStorage.getItem(STORAGE_KEY);
+              if (raw) return JSON.parse(raw);
+              await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_ITEMS));
+              return DEFAULT_ITEMS;
+            } catch (e) {
+              return DEFAULT_ITEMS;
+            }
+          }
+
+          export async function saveItems(items) {
+            await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+          }
+
+          export async function addItem(item) {
+            const items = await getItems();
+            const newItem = { ...item, id: Date.now().toString() };
+            const updated = [...items, newItem];
+            await saveItems(updated);
+            return updated;
+          }
+
+          export async function updateItem(id, updates) {
+            const items = await getItems();
+            const updated = items.map((i) => (i.id === id ? { ...i, ...updates } : i));
+            await saveItems(updated);
+            return updated;
+          }
+
+          export async function deleteItem(id) {
+            const items = await getItems();
+            const updated = items.filter((i) => i.id !== id);
+            await saveItems(updated);
+            return updated;
+          }
+
+          export async function resetToDefault() {
+            await saveItems(DEFAULT_ITEMS);
+            return DEFAULT_ITEMS;
+          }
+          EOF
+
+      - name: Create src/context/StothrasContext.js
+        run: |
+          cat > src/context/StothrasContext.js << 'EOF'
+          import React, { createContext, useState, useEffect, useCallback, useContext } from 'react';
+          import * as Storage from '../utils/storage';
+
+          const StothrasContext = createContext();
+
+          export function StothrasProvider({ children }) {
+            const [items, setItems] = useState([]);
+            const [loading, setLoading] = useState(true);
+
+            const refresh = useCallback(async () => {
+              setLoading(true);
+              const data = await Storage.getItems();
+              setItems(data);
+              setLoading(false);
+            }, []);
+
+            useEffect(() => {
+              refresh();
+            }, [refresh]);
+
+            const addNew = async (item) => setItems(await Storage.addItem(item));
+            const edit = async (id, updates) => setItems(await Storage.updateItem(id, updates));
+            const remove = async (id) => setItems(await Storage.deleteItem(id));
+            const reset = async () => setItems(await Storage.resetToDefault());
+
+            return (
+              <StothrasContext.Provider value={{ items, loading, addNew, edit, remove, reset, refresh }}>
+                {children}
+              </StothrasContext.Provider>
+            );
+          }
+
+          export const useStothras = () => useContext(StothrasContext);
+          EOF
+
+      # ---------------------------------------------------------------
+      # SCREENS
+      # ---------------------------------------------------------------
+      - name: Create src/screens/SplashScreen.js
+        run: |
+          cat > src/screens/SplashScreen.js << 'EOF'
+          import React, { useEffect, useRef } from 'react';
+          import { View, Image, StyleSheet, Animated, Easing } from 'react-native';
+          import { LinearGradient } from 'expo-linear-gradient';
+          import colors from '../theme/colors';
+
+          const LOGO_SIZE = 140;
+
+          export default function SplashScreen({ navigation }) {
+            const scale = useRef(new Animated.Value(0)).current;
+            const opacity = useRef(new Animated.Value(0)).current;
+            const textOpacity = useRef(new Animated.Value(0)).current;
+            const ring1Scale = useRef(new Animated.Value(0.6)).current;
+            const ring1Opacity = useRef(new Animated.Value(0.8)).current;
+            const ring2Scale = useRef(new Animated.Value(0.6)).current;
+            const ring2Opacity = useRef(new Animated.Value(0.8)).current;
+
+            useEffect(() => {
+              Animated.parallel([
+                Animated.spring(scale, { toValue: 1, friction: 4, useNativeDriver: true }),
+                Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+              ]).start();
+
+              Animated.timing(textOpacity, {
+                toValue: 1,
+                duration: 800,
+                delay: 400,
+                useNativeDriver: true,
+              }).start();
+
+              const pulse = (rScale, rOpacity, delay) =>
+                Animated.loop(
+                  Animated.sequence([
+                    Animated.delay(delay),
+                    Animated.parallel([
+                      Animated.timing(rScale, {
+                        toValue: 1.8,
+                        duration: 1400,
+                        easing: Easing.out(Easing.ease),
+                        useNativeDriver: true,
+                      }),
+                      Animated.timing(rOpacity, {
+                        toValue: 0,
+                        duration: 1400,
+                        easing: Easing.out(Easing.ease),
+                        useNativeDriver: true,
+                      }),
+                    ]),
+                    Animated.timing(rScale, { toValue: 0.6, duration: 0, useNativeDriver: true }),
+                    Animated.timing(rOpacity, { toValue: 0.8, duration: 0, useNativeDriver: true }),
+                  ])
+                );
+
+              pulse(ring1Scale, ring1Opacity, 0).start();
+              pulse(ring2Scale, ring2Opacity, 700).start();
+
+              const timer = setTimeout(() => navigation.replace('Home'), 2000);
+              return () => clearTimeout(timer);
+            }, []);
+
+            return (
+              <LinearGradient colors={colors.splashBackground} style={styles.container}>
+                <View style={styles.logoWrap}>
+                  <Animated.View
+                    style={[styles.ring, { transform: [{ scale: ring1Scale }], opacity: ring1Opacity }]}
+                  />
+                  <Animated.View
+                    style={[styles.ring, { transform: [{ scale: ring2Scale }], opacity: ring2Opacity }]}
+                  />
+                  <Animated.View style={{ transform: [{ scale }], opacity }}>
+                    <Image source={require('../../assets/logo.png')} style={styles.logo} />
+                  </Animated.View>
+                </View>
+                <Animated.Text style={[styles.title, { opacity: textOpacity }]}>Stothras</Animated.Text>
+                <Animated.Text style={[styles.subtitle, { opacity: textOpacity }]}>
+                  Devotion at your fingertips
+                </Animated.Text>
+              </LinearGradient>
+            );
+          }
+
+          const styles = StyleSheet.create({
+            container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+            logoWrap: { alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
+            ring: {
+              position: 'absolute',
+              width: LOGO_SIZE + 40,
+              height: LOGO_SIZE + 40,
+              borderRadius: (LOGO_SIZE + 40) / 2,
+              borderWidth: 3,
+              borderColor: '#FFD54F',
+            },
+            logo: {
+              width: LOGO_SIZE,
+              height: LOGO_SIZE,
+              borderRadius: LOGO_SIZE / 2,
+              borderWidth: 4,
+              borderColor: '#FFD54F',
+              backgroundColor: '#fff',
+            },
+            title: {
+              fontSize: 36,
+              fontWeight: 'bold',
+              color: '#FFF3E0',
+              letterSpacing: 2,
+              textShadowColor: 'rgba(0,0,0,0.4)',
+              textShadowOffset: { width: 0, height: 2 },
+              textShadowRadius: 4,
+            },
+            subtitle: { marginTop: 8, fontSize: 14, color: '#FFE0B2', fontStyle: 'italic' },
+          });
+          EOF
+
+      - name: Create src/screens/HomeScreen.js
+        run: |
+          cat > src/screens/HomeScreen.js << 'EOF'
+          import React from 'react';
+          import { View, Text, FlatList, StyleSheet, TouchableOpacity, Image } from 'react-native';
+          import { LinearGradient } from 'expo-linear-gradient';
+          import { Ionicons } from '@expo/vector-icons';
+          import { useStothras } from '../context/StothrasContext';
+          import { openYouTube } from '../utils/youtube';
+          import colors from '../theme/colors';
+
+          export default function HomeScreen({ navigation }) {
+            const { items, loading } = useStothras();
+
+            return (
+              <LinearGradient colors={colors.background} style={styles.container}>
+                <View style={styles.header}>
+                  <Image source={require('../../assets/logo.png')} style={styles.headerLogo} />
+                  <Text style={styles.headerTitle}>Stothras</Text>
+                  <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Manage')}>
+                    <Ionicons name="settings-sharp" size={24} color={colors.headerText} />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.subHeader}>Tap a shloka to listen</Text>
+
+                <FlatList
+                  data={items}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.list}
+                  ListEmptyComponent={
+                    !loading && (
+                      <Text style={styles.empty}>No stothras added yet. Tap the gear icon to add one!</Text>
+                    )
+                  }
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.card}
+                      activeOpacity={0.7}
+                      onPress={() => openYouTube(item.videoId)}
+                    >
+                      <Ionicons name="play-circle" size={30} color={colors.accent} style={{ marginRight: 14 }} />
+                      <Text style={styles.cardText}>{item.title}</Text>
+                    </TouchableOpacity>
+                  )}
+                />
+              </LinearGradient>
+            );
+          }
+
+          const styles = StyleSheet.create({
+            container: { flex: 1, paddingTop: 50 },
+            header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20 },
+            headerLogo: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
+            headerTitle: { flex: 1, fontSize: 28, fontWeight: 'bold', color: colors.headerText },
+            settingsBtn: { padding: 6 },
+            subHeader: {
+              textAlign: 'center',
+              color: colors.cardText,
+              marginVertical: 12,
+              fontSize: 15,
+              fontStyle: 'italic',
+            },
+            list: { paddingHorizontal: 20, paddingBottom: 40 },
+            card: {
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: colors.cardBackground,
+              borderRadius: 16,
+              padding: 18,
+              marginBottom: 14,
+              borderLeftWidth: 6,
+              borderLeftColor: colors.cardBorder,
+              shadowColor: '#000',
+              shadowOpacity: 0.1,
+              shadowRadius: 6,
+              shadowOffset: { width: 0, height: 3 },
+              elevation: 3,
+            },
+            cardText: { fontSize: 18, fontWeight: '600', color: colors.cardText, flexShrink: 1 },
+            empty: { textAlign: 'center', marginTop: 40, color: colors.cardText },
+          });
+          EOF
+
+      - name: Create src/screens/ManageScreen.js
+        run: |
+          cat > src/screens/ManageScreen.js << 'EOF'
+          import React from 'react';
+          import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+          import { LinearGradient } from 'expo-linear-gradient';
+          import { Ionicons } from '@expo/vector-icons';
+          import { useStothras } from '../context/StothrasContext';
+          import colors from '../theme/colors';
+
+          export default function ManageScreen({ navigation }) {
+            const { items, remove, reset } = useStothras();
+
+            const confirmDelete = (item) => {
+              Alert.alert('Delete', `Remove "${item.title}"?`, [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => remove(item.id) },
+              ]);
+            };
+
+            const confirmReset = () => {
+              Alert.alert('Reset', 'Restore default stothras list? This removes your customizations.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Reset', style: 'destructive', onPress: reset },
+              ]);
+            };
+
+            return (
+              <LinearGradient colors={colors.background} style={styles.container}>
+                <View style={styles.header}>
+                  <TouchableOpacity onPress={() => navigation.goBack()}>
+                    <Ionicons name="arrow-back" size={26} color={colors.headerText} />
+                  </TouchableOpacity>
+                  <Text style={styles.headerTitle}>Manage Stothras</Text>
+                  <TouchableOpacity onPress={confirmReset}>
+                    <Ionicons name="refresh" size={24} color={colors.headerText} />
+                  </TouchableOpacity>
+                </View>
+
+                <FlatList
+                  data={items}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.list}
+                  renderItem={({ item }) => (
+                    <View style={styles.card}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.cardTitle}>{item.title}</Text>
+                        <Text style={styles.cardSub}>ID: {item.videoId}</Text>
+                      </View>
+                      <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('Edit', { item })}>
+                        <Ionicons name="create-outline" size={22} color={colors.accent} />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.iconBtn} onPress={() => confirmDelete(item)}>
+                        <Ionicons name="trash-outline" size={22} color={colors.danger} />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                />
+
+                <TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate('Edit')}>
+                  <Ionicons name="add" size={28} color="#fff" />
+                  <Text style={styles.addBtnText}>Add New Stothram</Text>
+                </TouchableOpacity>
+              </LinearGradient>
+            );
+          }
+
+          const styles = StyleSheet.create({
+            container: { flex: 1, paddingTop: 50 },
+            header: {
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 20,
+              marginBottom: 10,
+            },
+            headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.headerText },
+            list: { paddingHorizontal: 20, paddingBottom: 100 },
+            card: {
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: colors.cardBackground,
+              borderRadius: 14,
+              padding: 14,
+              marginBottom: 12,
+            },
+            cardTitle: { fontSize: 16, fontWeight: '600', color: colors.cardText },
+            cardSub: { fontSize: 12, color: '#999', marginTop: 2 },
+            iconBtn: { padding: 6, marginLeft: 4 },
+            addBtn: {
+              position: 'absolute',
+              bottom: 24,
+              left: 20,
+              right: 20,
+              backgroundColor: colors.accent,
+              borderRadius: 30,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: 14,
+              shadowColor: '#000',
+              shadowOpacity: 0.2,
+              shadowRadius: 6,
+              elevation: 4,
+            },
+            addBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16, marginLeft: 6 },
+          });
+          EOF
+
+      - name: Create src/screens/EditScreen.js
+        run: |
+          cat > src/screens/EditScreen.js << 'EOF'
+          import React, { useState } from 'react';
+          import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
+          import { LinearGradient } from 'expo-linear-gradient';
+          import { Ionicons } from '@expo/vector-icons';
+          import { useStothras } from '../context/StothrasContext';
+          import { extractVideoId } from '../utils/youtube';
+          import colors from '../theme/colors';
+
+          export default function EditScreen({ navigation, route }) {
+            const editingItem = route.params?.item;
+            const { addNew, edit } = useStothras();
+            const [title, setTitle] = useState(editingItem?.title || '');
+            const [url, setUrl] = useState(
+              editingItem ? `https://www.youtube.com/watch?v=${editingItem.videoId}` : ''
+            );
+
+            const onSave = async () => {
+              if (!title.trim()) {
+                Alert.alert('Missing title', 'Please enter a title for this stothram.');
+                return;
+              }
+              const videoId = extractVideoId(url);
+              if (!videoId) {
+                Alert.alert('Invalid link', 'Please paste a valid YouTube link.');
+                return;
+              }
+              if (editingItem) {
+                await edit(editingItem.id, { title: title.trim(), videoId });
+              } else {
+                await addNew({ title: title.trim(), videoId });
+              }
+              navigation.goBack();
+            };
+
+            return (
+              <LinearGradient colors={colors.background} style={styles.container}>
+                <ScrollView contentContainerStyle={styles.scroll}>
+                  <View style={styles.header}>
+                    <TouchableOpacity onPress={() => navigation.goBack()}>
+                      <Ionicons name="close" size={28} color={colors.headerText} />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>{editingItem ? 'Edit Stothram' : 'Add Stothram'}</Text>
+                    <View style={{ width: 28 }} />
+                  </View>
+
+                  <Text style={styles.label}>Title</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Vishnu Sahasranamam"
+                    value={title}
+                    onChangeText={setTitle}
+                  />
+
+                  <Text style={styles.label}>YouTube Link</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Paste any YouTube link here"
+                    value={url}
+                    onChangeText={setUrl}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <Text style={styles.hint}>Works with normal, share, or embed links.</Text>
+
+                  <TouchableOpacity style={styles.saveBtn} onPress={onSave}>
+                    <Text style={styles.saveBtnText}>Save</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </LinearGradient>
+            );
+          }
+
+          const styles = StyleSheet.create({
+            container: { flex: 1, paddingTop: 50 },
+            scroll: { paddingHorizontal: 20, paddingBottom: 60 },
+            header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
+            headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.headerText },
+            label: { fontSize: 14, fontWeight: '600', color: colors.cardText, marginBottom: 6, marginTop: 16 },
+            input: {
+              backgroundColor: '#fff',
+              borderRadius: 12,
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              fontSize: 15,
+              borderWidth: 1,
+              borderColor: '#eee',
+            },
+            hint: { fontSize: 12, color: '#999', marginTop: 6 },
+            saveBtn: { backgroundColor: colors.accent, borderRadius: 30, paddingVertical: 16, alignItems: 'center', marginTop: 36 },
+            saveBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+          });
+          EOF
+
+      # ---------------------------------------------------------------
+      # LOGO PLACEHOLDER (only if you haven't added your own)
+      # ---------------------------------------------------------------
+      - name: Ensure a logo exists
+        run: |
+          if [ ! -f assets/logo.png ]; then
+            echo "No assets/logo.png found — generating a placeholder."
+            sudo apt-get update -y
+            sudo apt-get install -y imagemagick
+            convert -size 512x512 xc:'#FF9933' -gravity center -fill '#8B0000' \
+              -pointsize 260 -font DejaVu-Sans-Bold -annotate 0 "S" assets/logo.png
+          else
+            echo "Custom logo found — using it."
+          fi
+
+      # ---------------------------------------------------------------
+      # SAVE GENERATED CODE BACK TO THE REPO
+      # ---------------------------------------------------------------
+      - name: Commit generated app source code
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "Auto-generate Stothras app source code"
+          git push
+
+      # ---------------------------------------------------------------
+      # BUILD THE APK
+      # ---------------------------------------------------------------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Prebuild native Android project
+        run: npx expo prebuild --platform android --non-interactive
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Prepare APK for release
+        run: |
+          mkdir -p release-output
+          cp android/app/build/outputs/apk/debug/app-debug.apk release-output/Stothras.apk
+
+      - name: Set release tag
+        id: vars
+        run: |
+          echo "tag=v1.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +'%Y-%m-%d %H:%M UTC')" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: "Stothras APK — Build #${{ github.run_number }}"
+          body: |
+            Stothras App — Auto-built APK
+
+            Built on: ${{ steps.vars.outputs.date }}
+            Commit: ${{ github.sha }}
+
+            Installation: Download Stothras.apk below, open it on your Android phone, allow "install from unknown sources" if asked, and install.
+          files: release-output/Stothras.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
