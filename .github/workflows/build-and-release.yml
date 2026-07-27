@@ -773,7 +773,17 @@ jobs:
       - name: Prepare APK for release
         run: |
           mkdir -p release-output
-          cp android/app/build/outputs/apk/release/app-release-unsigned.apk release-output/Stothras.apk
+          echo "=== Searching for all APKs built ==="
+          find android/app/build/outputs/apk -name "*.apk" 2>/dev/null || echo "No APKs found at all"
+          echo "=== Copying whichever APK exists ==="
+          APK=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: No APK file found anywhere!"
+            exit 1
+          fi
+          echo "Found APK at: $APK"
+          cp "$APK" release-output/Stothras.apk
+          echo "Copied successfully."
 
       - name: Set release tag
         id: vars
