@@ -768,12 +768,12 @@ jobs:
 
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Prepare APK for release
         run: |
           mkdir -p release-output
-          cp android/app/build/outputs/apk/debug/app-debug.apk release-output/Stothras.apk
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk release-output/Stothras.apk
 
       - name: Set release tag
         id: vars
