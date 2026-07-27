@@ -727,7 +727,7 @@ jobs:
             sudo apt-get update -y
             sudo apt-get install -y imagemagick
             convert -size 512x512 xc:'#FF9933' -gravity center -fill '#8B0000' \
-              -pointsize 260 -font DejaVu-Sans-Bold -annotate 0 "S" assets/logo.png
+              -pointsize 260 -annotate 0 "S" assets/logo.png
           else
             echo "Custom logo found — using it."
           fi
@@ -750,7 +750,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
       - name: Setup Java
         uses: actions/setup-java@v4
